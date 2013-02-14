@@ -1,13 +1,14 @@
 module Delayed
   class DelayProxy < ActiveSupport::BasicObject
-    def initialize(target, options)
+    def initialize(payload_class, target, options)
+      @payload_class = payload_class
       @target = target
       @options = options
     end
 
     def method_missing(method, *args)
       Job.create({
-        :payload_object => PerformableMethod.new(@target, method.to_sym, args),
+        :payload_object => @payload_class.new(@target, method.to_sym, args),
         :priority       => ::Delayed::Worker.default_priority
       }.merge(@options))
     end
@@ -15,10 +16,10 @@ module Delayed
 
   module MessageSending
     def delay(options = {})
-      DelayProxy.new(self, options)
+      DelayProxy.new(PerformableMethod, self, options)
     end
     alias __delay__ delay
-    
+
     def send_later(method, *args)
       warn "[DEPRECATION] `object.send_later(:method)` is deprecated. Use `object.delay.method"
       __delay__.__send__(method, *args)
@@ -28,7 +29,7 @@ module Delayed
       warn "[DEPRECATION] `object.send_at(time, :method)` is deprecated. Use `object.delay(:run_at => time).method"
       __delay__(:run_at => time).__send__(method, *args)
     end
-    
+
     module ClassMethods
       def handle_asynchronously(method, opts = {})
         aliased_method, punctuation = method.to_s.sub(/([?!=])$/, ''), $1
@@ -49,5 +50,5 @@ module Delayed
         alias_method_chain method, :delay
       end
     end
-  end                               
+  end
 end
